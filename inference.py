@@ -5,6 +5,65 @@ import jax
 import jax.numpy as jnp
 from jax_tqdm import scan_tqdm
 
+class priors():
+
+    def uniform(lower=0.0, upper=1.0):
+        """
+        Uniform prior 
+
+        lower=0.0: the lower bound of the uniform distribution
+        upper=1.0: the upper bound of the uniform distribution
+
+        Returns: a function that takes a parameter p and returns the 
+            log of the specified uniform distribution at p. 
+        """
+
+        return lambda p: jnp.log((lower <= p) & (p <= upper))
+
+    def normal(mean=0.0, sigma=1.0):
+        """
+        Normal prior
+
+        mean=0.0: the mean of the normal distribution
+        sigma=1.0: the standard deviation of the normal distribution
+
+        Returns: a function that takes a parameter p and returns the 
+            log of the specified normal distribution at p.
+        """
+
+        return lambda p: -0.5 * (p - mean) / sigma**2
+
+    def bounded_normal(lower=0.0, upper=1.0, mean=0.0, sigma=1.0):
+        """
+        Bounded normal prior
+
+        lower=0.0: the lower bound of a uniform distribution
+        upper=1.0: the upper bound of a uniform distribution
+        mean=0.0: the mean of a normal distribution
+        sigma=1.0: the standard deviation of a normal distribution
+
+        Returns: a function that takes a parameter p and returns the 
+            log of the bounded normal distribution at p, where the bounded 
+            normal distribution is the product of the uniform distribution 
+            specified by lower and upper, and the normal distribution specified by 
+            mean and sigma.
+
+        """
+
+        return lambda p: (
+            jnp.log((lower <= p) & (p <= upper)) 
+            - 0.5 * (p - mean) / sigma**2
+        )
+
+    def no_prior():
+        """
+        Unrestricted prior.
+
+        Returns: a function that returns 0.0 for any input.
+        """
+
+        return lambda p: 0.0
+
 def window_adapt(logp, p, n, seed=12345):
     """
     Wrapper for blackjax.window_adaptation.

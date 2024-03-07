@@ -5,6 +5,17 @@ import tinygp
 import inspect
 import numpy as np
 
+def prior_builder(log_priors):
+
+    def log_prior(p):
+
+        lpr = 0.0
+        for lpfunc, pi in zip(log_priors, p):
+            lpr += lpfunc(pi)
+        return lpr
+
+    return log_prior
+
 @tinygp.helpers.dataclass
 class Multiband(tinygp.kernels.quasisep.Wrapper):
     """
@@ -22,9 +33,7 @@ class Multiband(tinygp.kernels.quasisep.Wrapper):
 
 def gauss_likelihood(resids, log_diag):
 
-    return -(
-        jnp.sum(jnp.square(resids) / (2 * jnp.exp(log_diag))) 
-        + len(resids) * log_diag)
+    return -jnp.sum(r**2) / (2 * jnp.exp(ld)) - 0.5 * len(r) * ld
 
 class multiband_no_gp():
 
@@ -83,7 +92,7 @@ class multiband_no_gp():
 
         return mean
 
-    def get_logp(self, y):
+    def get_logp(self, y, log_priors=[]):
         """
         y: A jax array of size (nbands, len(t)) containing 
             a set of observations of the flux in each band 
@@ -97,17 +106,33 @@ class multiband_no_gp():
 
         build_mean = self.mean_builder()
 
-        @jax.jit
-        def logp(p):
+        if len(log_priors) == 0:
+            @jax.jit
+            def logp(p):
 
-            log_diags = p[:self.nbands]
-            mean_params = p[self.nbands:]
-            mean = build_mean(mean_params)
-            lp = 0.0
-            for yi, ld, m in zip(y, log_diags, mean):
-                lp += gauss_likelihood(yi - m[0], ld)
+                log_diags = p[:self.nbands]
+                mean_params = p[self.nbands:]
+                mean = build_mean(mean_params)
+                lp = 0.0
+                for yi, ld, m in zip(y, log_diags, mean):
+                    lp += gauss_likelihood(yi - m[0], ld)
 
-            return lp
+                return lp
+        else:
+
+            build_lpr = prior_builder(log_priors)
+            
+            @jax.jit
+            def logp(p):
+                log_diags = p[:self.nbands]
+                mean_params = p[self.nbands:]
+                mean = build_mean(mean_params)
+                lpr = build_lpr(p)
+                lp = 0.0
+                for yi, ld, m in zip(y, log_diags, mean):
+                    lp += gauss_likelihood(yi - m[0], ld)
+
+                return lp + lpr
 
         return logp
             
@@ -256,20 +281,36 @@ class multiband_independent():
         build_mean = self.mean_builder()
         build_gps = self.gp_builder()
 
-        @jax.jit
-        def logp(p):
+        if len(log_priors) == 0:
+            @jax.jit
+            def logp(p):
 
-            gp_params = p[:self.ngp_params]
-            mean_params = p[self.ngp_params:]
-            gps = build_gps(gp_params)
-            mean = build_mean(mean_params)
-            lp = 0.0
-            for yi, gp, m in zip(y, gps, mean):
-                lp += gp.log_probability(yi - m[0])
-            return lp
+                gp_params = p[:self.ngp_params]
+                mean_params = p[self.ngp_params:]
+                gps = build_gps(gp_params)
+                mean = build_mean(mean_params)
+                lp = 0.0
+                for yi, gp, m in zip(y, gps, mean):
+                    lp += gp.log_probability(yi - m[0])
+                return lp
+        else:
+
+            build_lpr = self.prior_builder(log_priors)
             
-        return logp
+            @jax.jit
+            def logp(p):
 
+                gp_params = p[:self.ngp_params]
+                mean_params = p[self.ngp_params:]
+                gps = build_gps(gp_params)
+                mean = build_mean(mean_params)
+                lpr = build_lpr(p)
+                lp = 0.0
+                for yi, gp, m in zip(y, gps, mean):
+                    lp += gp.log_probability(yi - m[0])
+                return lp + lpr
+
+        return logp
 
 class multiband():
     """
@@ -380,7 +421,7 @@ class multiband():
 
         return mean
 
-    def get_logp(self, y):
+    def get_logp(self, y, log_priors=[]):
         """
         y: A jax array of size (nbands, len(t)) containing 
             a set of observations of the flux in each band 
@@ -397,14 +438,29 @@ class multiband():
 
         Y = jnp.hstack(y.T)
 
-        @jax.jit 
-        def logp(p):
+        if len(log_priors) == 0:
+            @jax.jit 
+            def logp(p):
 
-            gp_params = p[:self.ngp_params]
-            mean_params = p[self.ngp_params:]
-            gp = build_gp(gp_params)
-            mean = build_mean(mean_params).T.flatten()
-            return gp.log_probability(Y - mean)
+                gp_params = p[:self.ngp_params]
+                mean_params = p[self.ngp_params:]
+                gp = build_gp(gp_params)
+                mean = build_mean(mean_params).T.flatten()
+                return gp.log_probability(Y - mean)
+                
+        else:
+
+            build_lpr = prior_builder(log_priors)
+            
+            @jax.jit 
+            def logp(p):
+
+                gp_params = p[:self.ngp_params]
+                mean_params = p[self.ngp_params:]
+                gp = build_gp(gp_params)
+                mean = build_mean(mean_params).T.flatten()
+                lpr = build_lpr(p)
+                return gp.log_probability(Y - mean) + lpr
 
         return logp
 
