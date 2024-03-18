@@ -31,7 +31,7 @@ class priors():
             log of the specified normal distribution at p.
         """
 
-        return lambda p: -0.5 * (p - mean) / sigma**2
+        return lambda p: -0.5 * (p - mean)**2 / sigma**2
 
     def bounded_normal(lower=0.0, upper=1.0, mean=0.0, sigma=1.0):
         """
@@ -52,7 +52,7 @@ class priors():
 
         return lambda p: (
             jnp.log((lower <= p) & (p <= upper)) 
-            - 0.5 * (p - mean) / sigma**2
+            - 0.5 * (p - mean)**2 / sigma**2
         )
 
     def no_prior():
